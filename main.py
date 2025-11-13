@@ -5,13 +5,17 @@ from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import Application, InlineQueryHandler, ContextTypes
 
 from env import keyring_get, keyring_initialize
+from translations import TranslationService
+from languages import TRANSLATIONS
+
+i18n = TranslationService(translations=TRANSLATIONS, default_lang="en")
 
 # Configurazione logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
     datefmt='%y-%m-%d %H:%M:%S',
-    filename='lovelace.log'
+    filename='amazon_partner_bot.log'
 )
 
 # Headers per simulare un browser reale (evita blocchi)
@@ -19,6 +23,8 @@ HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
+def txt(key: str, user_lang: str | None = None, **kwargs) -> str:
+    return i18n.t(key, lang=user_lang, **kwargs)
 
 def expand_short_url(short_url):
     """
@@ -82,6 +88,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     query = update.inline_query.query
 
+    # Get user lang
+    user_lang = update.effective_user.language_code
+
     if not query:
         return
 
@@ -90,11 +99,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         results = [
             InlineQueryResultArticle(
                 id="error",
-                title="⚠️ URL non valido",
-                description="Inserisci un URL Amazon valido",
-                input_message_content=InputTextMessageContent(
-                    "❌ L'URL fornito non sembra essere un link Amazon."
-                )
+                title=txt('bot.error.url_error.title', user_lang),
+                description=txt('bot.error.url_error.description', user_lang),
+                input_message_content=InputTextMessageContent(txt('bot.error.url_error.input_message_content', user_lang))
             )
         ]
         await update.inline_query.answer(results)
@@ -107,12 +114,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         results = [
             InlineQueryResultArticle(
                 id="error",
-                title="⚠️ ASIN non trovato",
-                description="Non riesco a trovare l'ASIN nell'URL",
+                title=txt('bot.error.asin_error.title', user_lang),
+                description=txt('bot.error.asin_error.description', user_lang),
                 input_message_content=InputTextMessageContent(
-                    "❌ Non sono riuscito a estrarre l'ASIN dall'URL fornito.\n"
-                    "Assicurati che sia un link Amazon valido (anche breve)."
-                )
+                    txt('bot.error.asin_error.input_message_content', user_lang))
             )
         ]
         await update.inline_query.answer(results)
@@ -140,18 +145,15 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     results = [
         InlineQueryResultArticle(
             id=asin,
-            title="🔗 Link di affiliazione generato",
-            description=f"ASIN: {asin} | Dominio: {domain}",
-            input_message_content=InputTextMessageContent(
-                f"🔗 Link di affiliazione Amazon:\n\n{affiliate_link}\n\n"
-                f"📊 ASIN: {asin}"
-            ),
+            title=txt('bot.info.partner_link_generated.title', user_lang),
+            description=txt('bot.info.partner_link_generated.description', user_lang, asin=asin, domain=domain),
+            input_message_content=InputTextMessageContent(txt('bot.info.partner_link_generated.input_message_content', user_lang, affiliate_link=affiliate_link)),
             thumbnail_url="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Amazon_logo.svg/200px-Amazon_logo.svg.png"
         ),
         InlineQueryResultArticle(
             id=f"{asin}_solo_link",
-            title="📋 Invia solo il link",
-            description="Senza testo aggiuntivo",
+            title=txt('bot.info.only_asin_link.title', user_lang),
+            description=txt('bot.info.only_asin_link.description', user_lang),
             input_message_content=InputTextMessageContent(
                 affiliate_link
             )
