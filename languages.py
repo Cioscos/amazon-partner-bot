@@ -31,6 +31,11 @@ TRANSLATIONS: MessagesType = {
                     "description": "Unable to extract ASIN from URL",
                     "input_message_content": "❌ I was unable to extract the ASIN from the URL provided.\n"
                         "Make sure it's a valid Amazon link (even a short one)."
+                },
+                "rate_limit": {
+                    "title": "⚠️ Too fast!",
+                    "description": "Maximum {max_queries} requests per minute. Try again soon.",
+                    "input_message_content": "⚠️ You have exceeded the limit of {max_queries} requests per minute. Please wait a moment."
                 }
             },
             "info": {
@@ -59,6 +64,11 @@ TRANSLATIONS: MessagesType = {
                     "description": "Non riesco a trovare l'ASIN nell'URL",
                     "input_message_content": "❌ Non sono riuscito a estrarre l'ASIN dall'URL fornito.\n"
                         "Assicurati che sia un link Amazon valido (anche breve)."
+                },
+                "rate_limit": {
+                    "title": "⚠️ Troppo veloce!",
+                    "description": "Massimo {max_queries} richieste al minuto. Riprova tra poco.",
+                    "input_message_content": "⚠️ Hai superato il limite di {max_queries} richieste al minuto. Attendi un momento."
                 }
             },
             "info": {
