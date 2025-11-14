@@ -11,6 +11,7 @@ from telegram.ext import Application, InlineQueryHandler, ContextTypes
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from env import keyring_get, keyring_initialize
+from metrics import MetricsManager
 from translations import TranslationService
 from languages import TRANSLATIONS
 
@@ -23,6 +24,10 @@ logging.basicConfig(
     datefmt='%y-%m-%d %H:%M:%S',
     filename='amazon_partner_bot.log'
 )
+
+# set higher logging level for httpx to avoid all GET and POST requests being logged
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
 # Headers per simulare un browser reale
 HEADERS = {
@@ -54,13 +59,7 @@ user_queries = defaultdict(list)
 MAX_QUERIES_PER_MINUTE = 10
 
 # Metriche del bot
-bot_metrics = {
-    'total_queries': 0,
-    'successful_conversions': 0,
-    'failed_extractions': 0,
-    'rate_limited': 0,
-    'domains': Counter()
-}
+metrics_manager = MetricsManager(filepath="bot_metrics.json")
 
 
 def txt(key: str, user_lang: str | None = None, **kwargs) -> str:
@@ -69,16 +68,8 @@ def txt(key: str, user_lang: str | None = None, **kwargs) -> str:
 
 
 def track_metric(metric_name: str, value=1):
-    """Traccia metriche del bot."""
-    if metric_name in bot_metrics:
-        if isinstance(bot_metrics[metric_name], Counter):
-            bot_metrics[metric_name][value] += 1
-        else:
-            bot_metrics[metric_name] += value
-
-    # Log metriche ogni 100 query
-    if bot_metrics['total_queries'] % 100 == 0:
-        logging.info(f"Metriche bot: {dict(bot_metrics)}")
+    """Traccia metriche del bot con persistenza in tempo reale."""
+    metrics_manager.track(metric_name, value)
 
 
 async def check_rate_limit(user_id: int) -> bool:
@@ -108,7 +99,7 @@ def is_valid_amazon_url(url: str) -> bool:
         ]
         return any(domain in parsed.netloc.lower() for domain in valid_domains)
     except Exception as e:
-        logging.error(f"Errore validazione URL: {e}")
+        logger.error(f"Errore validazione URL: {e}")
         return False
 
 
@@ -125,10 +116,10 @@ def expand_short_url_with_retry(short_url: str) -> str | None:
         response = HTTP_SESSION.get(short_url, allow_redirects=True)
         response.raise_for_status()
         if response.status_code == 200:
-            logging.info(f"URL espanso con successo: {short_url} -> {response.url}")
+            logger.info(f"URL espanso con successo: {short_url} -> {response.url}")
             return response.url
     except requests.RequestException as e:
-        logging.error(f"Errore nell'espandere l'URL {short_url}: {e}")
+        logger.error(f"Errore nell'espandere l'URL {short_url}: {e}")
         raise
     return None
 
@@ -141,7 +132,7 @@ def expand_short_url_cached(short_url: str) -> str | None:
     try:
         return expand_short_url_with_retry(short_url)
     except Exception as e:
-        logging.error(f"Fallito l'espansione dell'URL dopo retry: {e}")
+        logger.error(f"Fallito l'espansione dell'URL dopo retry: {e}")
         return None
 
 
@@ -181,7 +172,7 @@ def extract_asin(url):
         expanded_url = expand_short_url_cached(url)
         if expanded_url:
             url = expanded_url
-            logging.info(f"URL espanso da cache: {expanded_url}")
+            logger.info(f"URL espanso da cache: {expanded_url}")
 
     # Pattern per estrarre l'ASIN da URL completi
     patterns = [
@@ -195,10 +186,10 @@ def extract_asin(url):
         match = re.search(pattern, url, re.IGNORECASE)
         if match:
             asin = match.group(1)
-            logging.info(f"ASIN estratto: {asin}")
+            logger.info(f"ASIN estratto: {asin}")
             return asin
 
-    logging.warning(f"Impossibile estrarre ASIN da: {url}")
+    logger.warning(f"Impossibile estrarre ASIN da: {url}")
     return None
 
 
@@ -208,7 +199,7 @@ def create_affiliate_link(asin: str, domain: str = "amazon.it") -> str:
     """
     partner_tag = keyring_get('Partner')
     affiliate_link = f"https://www.{domain}/dp/{asin}?tag={partner_tag}"
-    logging.info(f"Link di affiliazione creato: {affiliate_link}")
+    logger.info(f"Link di affiliazione creato: {affiliate_link}")
     return affiliate_link
 
 
@@ -310,7 +301,7 @@ def main():
     """
     # Initialize the keyring
     if not keyring_initialize():
-        logging.error("Inizializzazione keyring fallita")
+        logger.error("Inizializzazione keyring fallita")
         exit(0xFF)
 
     # Crea l'applicazione
@@ -323,20 +314,21 @@ def main():
     application.add_handler(InlineQueryHandler(inline_query_handler))
 
     # Avvia il bot
-    logging.info("Bot avviato con successo!")
-    logging.info(f"Rate limit: {MAX_QUERIES_PER_MINUTE} query/minuto per utente")
-    logging.info(f"Cache LRU: 1000 URL")
+    logger.info("Bot avviato con successo!")
+    logger.info(f"Rate limit: {MAX_QUERIES_PER_MINUTE} query/minuto per utente")
+    logger.info(f"Cache LRU: 1000 URL")
 
     try:
         application.run_polling(allowed_updates=["inline_query"])
     except KeyboardInterrupt:
-        logging.info("Bot arrestato dall'utente")
+        logger.info("Bot arrestato dall'utente")
     except Exception as e:
-        logging.error(f"Errore critico nel bot: {e}")
+        logger.error(f"Errore critico nel bot: {e}")
         raise
     finally:
         # Log metriche finali
-        logging.info(f"Metriche finali: {dict(bot_metrics)}")
+        final_metrics = metrics_manager.get_metrics()
+        logger.info(f"Metriche finali: {final_metrics}")
 
 
 if __name__ == "__main__":
