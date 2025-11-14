@@ -6,3 +6,7 @@ uv.lock
 
 # ENV files
 env
+
+# misc files
+amazon_partner_bot.log
+bot_metrics.json
